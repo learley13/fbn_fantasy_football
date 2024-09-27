@@ -7,8 +7,20 @@ export const enableBlog = false; // requires VITE_CONTENTFUL_ACCESS_TOKEN and VI
 
 /*   STEP 2   */
 export const homepageText = `
-  <p>This is liam testing 231122..</p>
-`;
+<h2>Welcome to Frizzy Boys and Nerds!</h2>
+<p>Welcome to the official website of the Frizzy Boys and Nerds Fantasy Football League! We’re thrilled to have you join our community, where passion for football and a touch of friendly competition unite.</p>
+
+<p>As we embrace the exciting transition to Sleeper in 2024, please note that this website focuses exclusively on data starting from this year. Unfortunately, we do not have access to historical league data from our previous platform on ESPN, which dates back to around 2016. However, we’re committed to bringing you the latest stats, league updates, and all the tools you need to dominate your fantasy season!</p>
+
+<p>On our website, you'll find a variety of resources to enhance your league experience:</p>
+<ul>
+  <li><strong>Power Rankings</strong>: Stay updated on where you stand against your competitors with our dynamic power rankings.</li>
+  <li><strong>Recent Trades and Acquisitions</strong>: Keep track of all the latest moves in the league with real-time updates on trades and player acquisitions.</li>
+  <li><strong>League History</strong>: Dive into our rich league history, featuring all-time records and a trophy room to celebrate past champions.</li>
+  <li><strong>Prior Drafts and Future Mock Drafts</strong>: Review previous draft results and participate in mock drafts to hone your strategy for the upcoming season.</li>
+</ul>
+
+<p>Get ready to strategize, connect with fellow league members, and make this season one for the books. Let the games begin!</p>`;
 
 /*   STEP 3   */
 /*
@@ -26,7 +38,7 @@ export const managers = [
       "name": "Salty Boys",
       "tookOver": 2020, // (DEPRECATED! You don't need to use this anymore) (optional) used if a manager took over a team, delete this line or change to null otherwise
       "location": "Costa Mesa, CA", // (optional)
-      "bio": "Testing 123",
+      // "bio": "",
       "photo": "/managers/name.jpg", // square ratio recommended (no larger than 500x500)
       "fantasyStart": 2014, // (optional) when did the manager start playing fantasy football
       "favoriteTeam": "min", // (optional) favorite NFL team, (follows convention: nyj, sea, mia, etc.) MUST BE LOWERCASE
