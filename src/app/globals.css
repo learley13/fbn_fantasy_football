@@ -23,3 +23,25 @@ h1,h2,h3,p { margin-top:0; } h1 { font-size:clamp(59px,9vw,124px); line-height:.
 .picker { display:flex; flex-direction:column; gap:5px; color:var(--muted); font:10px "DM Mono",monospace; text-transform:uppercase; letter-spacing:.08em; }.picker select { border:1px solid #c6bcac; background:var(--paper); color:var(--ink); padding:7px 28px 7px 9px; font:13px "DM Sans",sans-serif; }.draft-board { border-top:1px solid var(--ink); margin-top:28px; }.draft-board article { display:grid; grid-template-columns:54px 34px 1fr minmax(180px,.8fr); gap:12px; align-items:center; border-bottom:1px solid #d6cebf; padding:12px 0; }.draft-board article.traded { background:linear-gradient(90deg,rgba(128,26,43,.08),transparent); }.pick-number { color:var(--red); font:11px "DM Mono",monospace; text-align:center; }.draft-board article>img { border-radius:50%; background:#ded4c4; object-fit:cover; }.draft-board strong { display:block; font-size:13px; }.draft-board small { display:block; color:var(--muted); font-size:10px; margin-top:3px; }.draft-owner span { display:inline-block; margin-top:5px; color:var(--red); font:9px "DM Mono",monospace; }
 .trade-section { margin-bottom:70px; }.trade-section>h2 { margin-bottom:22px; }.trade-card { border:1px solid #d6cdbd; margin-top:12px; }.trade-card>header { display:flex; justify-content:space-between; padding:11px 15px; background:#ebe4d6; color:var(--muted); font:10px "DM Mono",monospace; }.trade-card>header strong { color:var(--ink); }.trade-sides { display:grid; grid-template-columns:1fr 1fr; }.trade-side { padding:17px; }.trade-side + .trade-side { border-left:1px solid #d6cdbd; }.trade-side>a { color:inherit; text-decoration:none; }.trade-side>a:hover strong { color:var(--red); text-decoration:underline; }.trade-side>a strong { display:block; font-size:15px; }.trade-side>a small { color:var(--muted); font-size:10px; }.trade-assets { display:flex; flex-direction:column; gap:6px; margin:14px 0; min-height:38px; }.trade-player { display:flex; align-items:center; gap:6px; font-size:12px; }.trade-player img { border-radius:50%; background:#e3dacb; }.trade-player small { color:var(--muted); font:9px "DM Mono",monospace; }.unrealized { color:#77736e; background:#eee9df; border:1px dashed #bdb5aa; padding:6px; font:9px "DM Mono",monospace; }.trade-score { border-top:1px solid #d6cdbd; padding-top:10px; }.trade-score strong { display:block; font-size:18px; }.trade-score small { color:var(--muted); font:10px "DM Mono",monospace; }.trade-score.positive strong { color:#327443; }.trade-score.negative strong { color:var(--red); }.trade-score.neutral strong { color:#77736e; }
 @media (max-width:800px) { .trade-sides { grid-template-columns:1fr; }.trade-side + .trade-side { border-left:0; border-top:1px solid #d6cdbd; } }
+
+/* Keep the mobile navigation readable: the league mark gets its own row and
+   the links retain their natural width in a touch-scrollable strip. */
+@media (max-width:800px) {
+  .site-nav { display:block; }
+  .site-nav .wordmark { display:block; font-size:12px; white-space:nowrap; }
+  .site-nav .status { display:none; }
+  .site-nav > div {
+    display:flex;
+    width:calc(100% + 44px);
+    margin:15px -22px -2px;
+    padding:0 22px 12px;
+    overflow-x:auto;
+    gap:20px;
+    scrollbar-width:none;
+    border-bottom:1px solid #493d3e;
+  }
+  .site-nav > div::-webkit-scrollbar { display:none; }
+  .site-nav > div a { white-space:nowrap; font-size:12px; }
+  .hero-content { margin-top:58px; }
+  .page-hero { padding-top:52px; padding-bottom:48px; }
+}
