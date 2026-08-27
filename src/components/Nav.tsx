@@ -6,6 +6,7 @@ const links = [
   ["/teams", "Teams"],
   ["/power-rankings", "Rankings"],
   ["/transactions", "Acquisitions"],
+  ["/trades", "Trades"],
   ["/drafts", "Drafts"],
   ["/history", "All-Time Stats"]
 ] as const;

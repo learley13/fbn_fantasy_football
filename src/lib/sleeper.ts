@@ -30,12 +30,12 @@ function teamName(user: User | undefined) {
 export type ManagerTotal = { id: string; name: string; managerName: string; seasons: number; wins: number; losses: number; ties: number; pf: number; pa: number; moves: number; latestPf: number };
 export type PlayerMove = { id: string; name: string; position: string; team: string };
 export type ActivityTeam = { id: string; name: string; managerName: string };
-export type Activity = { id: string; season: number; type: string; teams: ActivityTeam[]; created: number; adds: number; drops: number; bid?: number; playerIds: string[]; players?: PlayerMove[] };
-export type TradeSide = { team: ActivityTeam; players: PlayerMove[]; draftPicks: string[]; pf: number; delta: number };
-export type TradeAnalysis = { id: string; season: number; created: number; sides: TradeSide[] };
+export type Activity = { id: string; season: number; type: string; teams: ActivityTeam[]; created: number; adds: number; drops: number; bid?: number; playerIds: string[]; draftPicks?: string[]; players?: PlayerMove[] };
 export type AnalyticsRow = ManagerTotal & { expectedWins: number; allPlayWins: number; allPlayLosses: number; luck: number };
 export type WeeklyScore = { season: number; week: number; managerId: string; points: number };
 export type AnalyticsReport = { key: string; label: string; rows: AnalyticsRow[]; weeklyScores: WeeklyScore[] };
+export type TradeReceiptSide = { team: ActivityTeam; players: PlayerMove[]; picks: Array<{ label: string; realized?: PlayerMove }>; pf: number; delta: number };
+export type TradeReceipt = { id: string; season: number; created: number; sides: TradeReceiptSide[] };
 
 export async function getLeagueDashboard() {
   const records = await Promise.all(LEAGUES.map(async ({ id, season }) => {
@@ -81,7 +81,8 @@ export async function getLeagueDashboard() {
         adds: Object.keys(transaction.adds ?? {}).length,
         drops: Object.keys(transaction.drops ?? {}).length,
         bid: transaction.settings?.waiver_bid
-        ,playerIds: [...Object.keys(transaction.adds ?? {}), ...Object.keys(transaction.drops ?? {})]
+        ,playerIds: [...Object.keys(transaction.adds ?? {}), ...Object.keys(transaction.drops ?? {})],
+        draftPicks: transaction.draft_picks?.map((pick) => `${pick.season} Round ${pick.round} pick`)
       });
     }
   }
@@ -110,7 +111,14 @@ export async function getTeamProfile(userId: string) {
     const transactions = record.transactions.filter((item) => item.roster_ids.includes(roster.roster_id));
     return { season: record.season, status: record.league.status, wins: roster.settings.wins ?? 0, losses: roster.settings.losses ?? 0, ties: roster.settings.ties ?? 0, pf: (roster.settings.fpts ?? 0) + (roster.settings.fpts_decimal ?? 0) / 100, pa: (roster.settings.fpts_against ?? 0) + (roster.settings.fpts_against_decimal ?? 0) / 100, moves: roster.settings.total_moves ?? 0, transactions: transactions.length };
   }).filter((season): season is NonNullable<typeof season> => season !== null);
-  return { manager, seasons };
+  const activity = dashboard.activity.filter((item) => item.teams.some((team) => team.id === userId)).map((item) => ({
+    ...item,
+    players: item.playerIds.slice(0, 4).map((id) => {
+      const player = playerInfo[id as keyof typeof playerInfo];
+      return player ? { id, ...player } : { id, name: `Player #${id}`, position: "", team: "" };
+    })
+  }));
+  return { manager, seasons, activity };
 }
 
 export type HistoryRow = { id: string; name: string; managerName: string; seasons: Record<number, { wins: number; losses: number; ties: number; pf: number; pa: number; moves: number }> };
@@ -215,34 +223,36 @@ export async function getTransactionArchive() {
   }));
 }
 
-export async function getTradeAnalysis() {
+export async function getTradeLedger() {
   const dashboard = await getLeagueDashboard();
-  const currentManagers = new Map(dashboard.managers.map((manager) => [manager.id, manager]));
-  const trades: TradeAnalysis[] = [];
+  const drafts = await getDraftArchive();
+  const managers = new Map(dashboard.managers.map((manager) => [manager.id, manager]));
+  const receipts: TradeReceipt[] = [];
   for (const record of dashboard.records.filter((item) => item.season < 2026)) {
     const ownerByRoster = new Map(record.rosters.map((roster) => [roster.roster_id, roster.owner_id]));
     const teamFor = (rosterId: number): ActivityTeam => {
-      const manager = currentManagers.get(ownerByRoster.get(rosterId) || "");
+      const manager = managers.get(ownerByRoster.get(rosterId) || "");
       return manager ? { id: manager.id, name: manager.name, managerName: manager.managerName } : { id: String(rosterId), name: "Unknown team", managerName: "Unknown manager" };
     };
-    const matchupWeeks = await Promise.all(Array.from({ length: 18 }, (_, index) => get<Matchup[]>(`/league/${record.id}/matchups/${index + 1}`)));
+    const weeks = await Promise.all(Array.from({ length: 18 }, (_, index) => get<Matchup[]>(`/league/${record.id}/matchups/${index + 1}`)));
     for (const trade of record.transactions.filter((item) => item.type === "trade")) {
       const sides = trade.roster_ids.map((rosterId) => {
-        const playerIds = Object.entries(trade.adds || {}).filter(([, recipient]) => recipient === rosterId).map(([playerId]) => playerId);
-        const players = playerIds.map((id) => {
+        const ids = Object.entries(trade.adds || {}).filter(([, owner]) => owner === rosterId).map(([id]) => id);
+        const players = ids.map((id) => {
           const player = playerInfo[id as keyof typeof playerInfo];
           return player ? { id, ...player } : { id, name: `Player #${id}`, position: "", team: "" };
         });
-        const pf = matchupWeeks.slice(trade.leg).reduce((sum, week) => {
-          const matchup = week.find((item) => item.roster_id === rosterId);
-          return sum + playerIds.reduce((playerSum, playerId) => playerSum + (matchup?.players_points?.[playerId] || 0), 0);
-        }, 0);
-        const draftPicks = (trade.draft_picks || []).filter((pick) => pick.owner_id === rosterId).map((pick) => `${pick.season} R${pick.round} · from ${teamFor(pick.roster_id).name}`);
-        return { team: teamFor(rosterId), players, draftPicks, pf, delta: 0 };
+        const picks = (trade.draft_picks || []).filter((pick) => pick.owner_id === rosterId).map((pick) => {
+          const draft = drafts.find((item) => item.season === Number(pick.season));
+          const selected = draft?.picks.find((item) => item.round === pick.round && item.owner.rosterId === pick.roster_id);
+          return { label: `${pick.season} Round ${pick.round} pick`, realized: selected ? { id: selected.playerId, name: selected.playerName, position: selected.position, team: selected.team } : undefined };
+        });
+        const pf = weeks.slice(trade.leg).reduce((total, week) => total + ids.reduce((sum, id) => sum + (week.find((matchup) => matchup.roster_id === rosterId)?.players_points?.[id] || 0), 0), 0);
+        return { team: teamFor(rosterId), players, picks, pf, delta: 0 };
       });
       if (sides.length === 2) { sides[0].delta = sides[0].pf - sides[1].pf; sides[1].delta = -sides[0].delta; }
-      trades.push({ id: trade.transaction_id, season: record.season, created: trade.created, sides });
+      receipts.push({ id: trade.transaction_id, season: record.season, created: trade.created, sides });
     }
   }
-  return trades.sort((a, b) => b.created - a.created);
+  return receipts.sort((a, b) => b.created - a.created);
 }
