@@ -78,9 +78,19 @@ export async function getLeagueDashboard() {
       });
     }
   }
-  const managers = [...totals.values()].sort((a, b) => b.pf - a.pf);
+  // Sleeper renews a league each season. Always present the active league's team
+  // identity, while retaining that person's results from every prior season.
+  const activeUsers = new Map(records[0].users.map((user) => [user.user_id, user]));
+  const identityFor = (userId: string, fallback?: ActivityTeam) => {
+    const user = activeUsers.get(userId);
+    return user ? { id: user.user_id, name: teamName(user), managerName: user.display_name } : fallback || { id: userId, name: "Unknown team", managerName: "Unknown manager" };
+  };
+  const managers = [...totals.values()].map((manager) => {
+    const identity = identityFor(manager.id);
+    return { ...manager, name: identity.name, managerName: identity.managerName };
+  }).sort((a, b) => b.pf - a.pf);
   const power = [...managers].sort((a, b) => (b.latestPf || b.pf / b.seasons) + (b.wins - b.losses) * 25 - ((a.latestPf || a.pf / a.seasons) + (a.wins - a.losses) * 25));
-  return { records, managers, power, activity: activity.sort((a, b) => b.created - a.created) };
+  return { records, managers, power, activity: activity.map((item) => ({ ...item, teams: item.teams.map((team) => identityFor(team.id, team)) })).sort((a, b) => b.created - a.created) };
 }
 
 export async function getTeamProfile(userId: string) {
@@ -98,6 +108,7 @@ export async function getTeamProfile(userId: string) {
 
 export async function getDraftArchive() {
   const dashboard = await getLeagueDashboard();
+  const activeManagers = new Map(dashboard.managers.map((manager) => [manager.id, manager]));
   return Promise.all(dashboard.records.filter((record) => record.season < 2026).map(async (record) => {
     const drafts = await get<Draft[]>(`/league/${record.id}/drafts`);
     const draft = drafts[0];
@@ -106,7 +117,8 @@ export async function getDraftArchive() {
     const owners = new Map(record.rosters.map((roster) => [roster.roster_id, record.users.find((user) => user.user_id === roster.owner_id)]));
     const team = (rosterId: number) => {
       const user = owners.get(rosterId);
-      return { rosterId, name: teamName(user), managerName: user?.display_name || "Unknown manager", id: user?.user_id || String(rosterId) };
+      const manager = activeManagers.get(user?.user_id || "");
+      return { rosterId, name: manager?.name || teamName(user), managerName: manager?.managerName || user?.display_name || "Unknown manager", id: user?.user_id || String(rosterId) };
     };
     const traded = new Map(tradedPicks.map((pick) => [`${pick.round}-${pick.roster_id}`, pick]));
     return { season: record.season, rounds: draft.settings.rounds ?? 0, picks: picks.map((pick) => {
