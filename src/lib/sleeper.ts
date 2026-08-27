@@ -11,7 +11,8 @@ export const LEAGUES = [
 type League = { name: string; season: string; status: string; settings: { leg?: number; playoff_week_start?: number } };
 type User = { user_id: string; display_name: string; username?: string; metadata?: { team_name?: string } };
 type Roster = { roster_id: number; owner_id: string; settings: { wins?: number; losses?: number; ties?: number; fpts?: number; fpts_decimal?: number; fpts_against?: number; fpts_against_decimal?: number; total_moves?: number } };
-type Transaction = { transaction_id: string; type: string; status: string; roster_ids: number[]; created: number; adds?: Record<string, number>; drops?: Record<string, number>; settings?: { waiver_bid?: number } };
+type Transaction = { transaction_id: string; type: string; status: string; roster_ids: number[]; leg: number; created: number; adds?: Record<string, number>; drops?: Record<string, number>; draft_picks?: Array<{ season: string; round: number; roster_id: number; owner_id: number; previous_owner_id: number }>; settings?: { waiver_bid?: number } };
+type Matchup = { roster_id: number; players_points?: Record<string, number> };
 type Draft = { draft_id: string; season: string; type: string; settings: { rounds?: number } };
 type DraftPick = { pick_no: number; round: number; draft_slot: number; roster_id: number; picked_by: string; metadata: { first_name?: string; last_name?: string; position?: string; team?: string }; player_id: string };
 type TradedPick = { round: number; roster_id: number; owner_id: number; previous_owner_id: number };
@@ -29,7 +30,9 @@ function teamName(user: User | undefined) {
 export type ManagerTotal = { id: string; name: string; managerName: string; seasons: number; wins: number; losses: number; ties: number; pf: number; pa: number; moves: number; latestPf: number };
 export type PlayerMove = { id: string; name: string; position: string; team: string };
 export type ActivityTeam = { id: string; name: string; managerName: string };
-export type Activity = { id: string; type: string; teams: ActivityTeam[]; created: number; adds: number; drops: number; bid?: number; playerIds: string[]; players?: PlayerMove[] };
+export type Activity = { id: string; season: number; type: string; teams: ActivityTeam[]; created: number; adds: number; drops: number; bid?: number; playerIds: string[]; players?: PlayerMove[] };
+export type TradeSide = { team: ActivityTeam; players: PlayerMove[]; draftPicks: string[]; pf: number; delta: number };
+export type TradeAnalysis = { id: string; season: number; created: number; sides: TradeSide[] };
 
 export async function getLeagueDashboard() {
   const records = await Promise.all(LEAGUES.map(async ({ id, season }) => {
@@ -65,6 +68,7 @@ export async function getLeagueDashboard() {
     for (const transaction of record.transactions) {
       activity.push({
         id: transaction.transaction_id,
+        season: record.season,
         type: transaction.type,
         teams: transaction.roster_ids.map((id) => {
           const user = users.get(rosterOwners.get(id) ?? "");
@@ -106,6 +110,23 @@ export async function getTeamProfile(userId: string) {
   return { manager, seasons };
 }
 
+export type HistoryRow = { id: string; name: string; managerName: string; seasons: Record<number, { wins: number; losses: number; ties: number; pf: number; pa: number; moves: number }> };
+
+export async function getHistoryReport() {
+  const dashboard = await getLeagueDashboard();
+  const rows = new Map<string, HistoryRow>();
+  for (const record of dashboard.records) {
+    for (const roster of record.rosters) {
+      const manager = dashboard.managers.find((item) => item.id === roster.owner_id);
+      if (!manager) continue;
+      const row = rows.get(manager.id) || { id: manager.id, name: manager.name, managerName: manager.managerName, seasons: {} };
+      row.seasons[record.season] = { wins: roster.settings.wins ?? 0, losses: roster.settings.losses ?? 0, ties: roster.settings.ties ?? 0, pf: (roster.settings.fpts ?? 0) + (roster.settings.fpts_decimal ?? 0) / 100, pa: (roster.settings.fpts_against ?? 0) + (roster.settings.fpts_against_decimal ?? 0) / 100, moves: roster.settings.total_moves ?? 0 };
+      rows.set(manager.id, row);
+    }
+  }
+  return { seasons: dashboard.records.map((record) => record.season).filter((season) => season < 2026), rows: [...rows.values()] };
+}
+
 export async function getDraftArchive() {
   const dashboard = await getLeagueDashboard();
   const activeManagers = new Map(dashboard.managers.map((manager) => [manager.id, manager]));
@@ -137,4 +158,36 @@ export async function getTransactionArchive() {
       return player ? { id, ...player } : { id, name: `Player #${id}`, position: "", team: "" };
     })
   }));
+}
+
+export async function getTradeAnalysis() {
+  const dashboard = await getLeagueDashboard();
+  const currentManagers = new Map(dashboard.managers.map((manager) => [manager.id, manager]));
+  const trades: TradeAnalysis[] = [];
+  for (const record of dashboard.records.filter((item) => item.season < 2026)) {
+    const ownerByRoster = new Map(record.rosters.map((roster) => [roster.roster_id, roster.owner_id]));
+    const teamFor = (rosterId: number): ActivityTeam => {
+      const manager = currentManagers.get(ownerByRoster.get(rosterId) || "");
+      return manager ? { id: manager.id, name: manager.name, managerName: manager.managerName } : { id: String(rosterId), name: "Unknown team", managerName: "Unknown manager" };
+    };
+    const matchupWeeks = await Promise.all(Array.from({ length: 18 }, (_, index) => get<Matchup[]>(`/league/${record.id}/matchups/${index + 1}`)));
+    for (const trade of record.transactions.filter((item) => item.type === "trade")) {
+      const sides = trade.roster_ids.map((rosterId) => {
+        const playerIds = Object.entries(trade.adds || {}).filter(([, recipient]) => recipient === rosterId).map(([playerId]) => playerId);
+        const players = playerIds.map((id) => {
+          const player = playerInfo[id as keyof typeof playerInfo];
+          return player ? { id, ...player } : { id, name: `Player #${id}`, position: "", team: "" };
+        });
+        const pf = matchupWeeks.slice(trade.leg).reduce((sum, week) => {
+          const matchup = week.find((item) => item.roster_id === rosterId);
+          return sum + playerIds.reduce((playerSum, playerId) => playerSum + (matchup?.players_points?.[playerId] || 0), 0);
+        }, 0);
+        const draftPicks = (trade.draft_picks || []).filter((pick) => pick.owner_id === rosterId).map((pick) => `${pick.season} R${pick.round} · from ${teamFor(pick.roster_id).name}`);
+        return { team: teamFor(rosterId), players, draftPicks, pf, delta: 0 };
+      });
+      if (sides.length === 2) { sides[0].delta = sides[0].pf - sides[1].pf; sides[1].delta = -sides[0].delta; }
+      trades.push({ id: trade.transaction_id, season: record.season, created: trade.created, sides });
+    }
+  }
+  return trades.sort((a, b) => b.created - a.created);
 }
