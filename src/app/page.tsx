@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 
 const destinations = [
+  ["/analytics", "Analytics Hub", "Scoring, schedule, and the luck ledger"],
   ["/teams", "Teams", "Franchise profiles and season logs"],
   ["/history", "All-Time Stats", "Sortable league history by year"],
   ["/power-rankings", "Rankings", "Points for and points against"],

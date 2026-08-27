@@ -12,7 +12,7 @@ type League = { name: string; season: string; status: string; settings: { leg?: 
 type User = { user_id: string; display_name: string; username?: string; metadata?: { team_name?: string } };
 type Roster = { roster_id: number; owner_id: string; settings: { wins?: number; losses?: number; ties?: number; fpts?: number; fpts_decimal?: number; fpts_against?: number; fpts_against_decimal?: number; total_moves?: number } };
 type Transaction = { transaction_id: string; type: string; status: string; roster_ids: number[]; leg: number; created: number; adds?: Record<string, number>; drops?: Record<string, number>; draft_picks?: Array<{ season: string; round: number; roster_id: number; owner_id: number; previous_owner_id: number }>; settings?: { waiver_bid?: number } };
-type Matchup = { roster_id: number; players_points?: Record<string, number> };
+type Matchup = { roster_id: number; matchup_id?: number | null; points?: number; players_points?: Record<string, number> };
 type Draft = { draft_id: string; season: string; type: string; settings: { rounds?: number } };
 type DraftPick = { pick_no: number; round: number; draft_slot: number; roster_id: number; picked_by: string; metadata: { first_name?: string; last_name?: string; position?: string; team?: string }; player_id: string };
 type TradedPick = { round: number; roster_id: number; owner_id: number; previous_owner_id: number };
@@ -33,6 +33,9 @@ export type ActivityTeam = { id: string; name: string; managerName: string };
 export type Activity = { id: string; season: number; type: string; teams: ActivityTeam[]; created: number; adds: number; drops: number; bid?: number; playerIds: string[]; players?: PlayerMove[] };
 export type TradeSide = { team: ActivityTeam; players: PlayerMove[]; draftPicks: string[]; pf: number; delta: number };
 export type TradeAnalysis = { id: string; season: number; created: number; sides: TradeSide[] };
+export type AnalyticsRow = ManagerTotal & { expectedWins: number; allPlayWins: number; allPlayLosses: number; luck: number };
+export type WeeklyScore = { season: number; week: number; managerId: string; points: number };
+export type AnalyticsReport = { key: string; label: string; rows: AnalyticsRow[]; weeklyScores: WeeklyScore[] };
 
 export async function getLeagueDashboard() {
   const records = await Promise.all(LEAGUES.map(async ({ id, season }) => {
@@ -125,6 +128,58 @@ export async function getHistoryReport() {
     }
   }
   return { seasons: dashboard.records.map((record) => record.season).filter((season) => season < 2026), rows: [...rows.values()] };
+}
+
+export async function getAnalyticsHub() {
+  const dashboard = await getLeagueDashboard();
+  const completedRecords = dashboard.records.filter((record) => record.season < 2026);
+  const scoreWeeks = await Promise.all(completedRecords.map(async (record) => ({
+    season: record.season,
+    weeks: await Promise.all(Array.from({ length: 18 }, (_, index) => get<Matchup[]>(`/league/${record.id}/matchups/${index + 1}`)))
+  })));
+  const reportFor = (records: typeof completedRecords, label: string, key: string): AnalyticsReport => {
+    const totals = new Map<string, ManagerTotal>();
+    for (const record of records) for (const roster of record.rosters) {
+      const manager = dashboard.managers.find((item) => item.id === roster.owner_id);
+      if (!manager) continue;
+      const total = totals.get(manager.id) || { ...manager, seasons: 0, wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, moves: 0, latestPf: 0 };
+      total.seasons += 1;
+      total.wins += roster.settings.wins || 0;
+      total.losses += roster.settings.losses || 0;
+      total.ties += roster.settings.ties || 0;
+      total.pf += (roster.settings.fpts || 0) + (roster.settings.fpts_decimal || 0) / 100;
+      total.pa += (roster.settings.fpts_against || 0) + (roster.settings.fpts_against_decimal || 0) / 100;
+      total.moves += roster.settings.total_moves || 0;
+      totals.set(manager.id, total);
+    }
+    const allPlay = new Map<string, { wins: number; losses: number }>();
+    const weeklyScores: WeeklyScore[] = [];
+    for (const record of records) {
+      const ownerByRoster = new Map(record.rosters.map((roster) => [roster.roster_id, roster.owner_id]));
+      const weeks = scoreWeeks.find((item) => item.season === record.season)?.weeks || [];
+      weeks.forEach((week, weekIndex) => {
+        const scored = week.filter((item) => typeof item.points === "number" && ownerByRoster.has(item.roster_id));
+        for (const score of scored) {
+          const managerId = ownerByRoster.get(score.roster_id)!;
+          const result = allPlay.get(managerId) || { wins: 0, losses: 0 };
+          result.wins += scored.filter((other) => (score.points || 0) > (other.points || 0)).length;
+          result.losses += scored.filter((other) => (score.points || 0) < (other.points || 0)).length;
+          allPlay.set(managerId, result);
+          weeklyScores.push({ season: record.season, week: weekIndex + 1, managerId, points: score.points || 0 });
+        }
+      });
+    }
+    const rows = [...totals.values()].map((manager) => {
+      const record = allPlay.get(manager.id) || { wins: 0, losses: 0 };
+      const games = manager.wins + manager.losses + manager.ties;
+      const expectedWins = record.wins + record.losses ? record.wins / (record.wins + record.losses) * games : 0;
+      return { ...manager, expectedWins, allPlayWins: record.wins, allPlayLosses: record.losses, luck: manager.wins - expectedWins };
+    });
+    return { key, label, rows, weeklyScores };
+  };
+  return {
+    reports: [reportFor(completedRecords, "All time", "all"), ...completedRecords.map((record) => reportFor([record], String(record.season), String(record.season)))]
+  };
 }
 
 export async function getDraftArchive() {
