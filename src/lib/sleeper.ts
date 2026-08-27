@@ -36,6 +36,7 @@ export type WeeklyScore = { season: number; week: number; managerId: string; poi
 export type AnalyticsReport = { key: string; label: string; rows: AnalyticsRow[]; weeklyScores: WeeklyScore[] };
 export type TradeReceiptSide = { team: ActivityTeam; players: PlayerMove[]; picks: Array<{ label: string; realized?: PlayerMove }>; pf: number; delta: number };
 export type TradeReceipt = { id: string; season: number; created: number; sides: TradeReceiptSide[] };
+export type PlayerReference = { id: string; name: string; position: string; team: string; points: number; weekly: Array<{ season: number; week: number; points: number; team: ActivityTeam }>; activity: Activity[]; drafts: Array<{ season: number; round: number; pickNo: number; team: ActivityTeam }>; blurb: string };
 
 export async function getLeagueDashboard() {
   const records = await Promise.all(LEAGUES.map(async ({ id, season }) => {
@@ -221,6 +222,34 @@ export async function getTransactionArchive() {
       return player ? { id, ...player } : { id, name: `Player #${id}`, position: "", team: "" };
     })
   }));
+}
+
+export async function getPlayerReference(playerId: string): Promise<PlayerReference | null> {
+  const player = playerInfo[playerId as keyof typeof playerInfo];
+  if (!player) return null;
+  const dashboard = await getLeagueDashboard();
+  const weekly: PlayerReference["weekly"] = [];
+  for (const record of dashboard.records.filter((item) => item.season < 2026)) {
+    const owners = new Map(record.rosters.map((roster) => [roster.roster_id, roster.owner_id]));
+    const scores = await Promise.all(Array.from({ length: 18 }, (_, index) => get<Matchup[]>(`/league/${record.id}/matchups/${index + 1}`)));
+    scores.forEach((week, weekIndex) => week.forEach((matchup) => {
+      const points = matchup.players_points?.[playerId];
+      const owner = owners.get(matchup.roster_id);
+      const manager = dashboard.managers.find((item) => item.id === owner);
+      if (typeof points === "number" && manager) weekly.push({ season: record.season, week: weekIndex + 1, points, team: { id: manager.id, name: manager.name, managerName: manager.managerName } });
+    }));
+  }
+  const activity = dashboard.activity.filter((item) => item.playerIds.includes(playerId));
+  const drafts = (await getDraftArchive()).flatMap((draft) => draft.picks.filter((pick) => pick.playerId === playerId).map((pick) => ({ season: draft.season, round: pick.round, pickNo: pick.pickNo, team: { id: pick.owner.id, name: pick.owner.name, managerName: pick.owner.managerName } })));
+  const points = weekly.reduce((total, item) => total + item.points, 0);
+  const firstDraft = drafts[0];
+  const movement = activity.length ? `He has appeared in ${activity.length} recorded league transaction${activity.length === 1 ? "" : "s"}.` : "He has not appeared in a recorded league transaction.";
+  const blurb = firstDraft ? `${player.name} entered AOTW in ${firstDraft.season} as a round ${firstDraft.round} selection by ${firstDraft.team.name}. He has produced ${points.toFixed(1)} AOTW points across ${weekly.length} scored weeks. ${movement}` : `${player.name} has produced ${points.toFixed(1)} AOTW points across ${weekly.length} scored weeks. ${movement}`;
+  return { id: playerId, ...player, points, weekly, activity, drafts, blurb };
+}
+
+export function getPlayerDirectory() {
+  return Object.entries(playerInfo).map(([id, player]) => ({ id, ...player })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getTradeLedger() {
