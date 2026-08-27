@@ -16,6 +16,7 @@ type Matchup = { roster_id: number; matchup_id?: number | null; points?: number;
 type Draft = { draft_id: string; season: string; type: string; settings: { rounds?: number } };
 type DraftPick = { pick_no: number; round: number; draft_slot: number; roster_id: number; picked_by: string; metadata: { first_name?: string; last_name?: string; position?: string; team?: string }; player_id: string };
 type TradedPick = { round: number; roster_id: number; owner_id: number; previous_owner_id: number };
+type SleeperPlayer = { first_name?: string; last_name?: string; full_name?: string; position?: string; team?: string };
 
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${API}${path}`, { next: { revalidate: 60 } });
@@ -225,7 +226,10 @@ export async function getTransactionArchive() {
 }
 
 export async function getPlayerReference(playerId: string): Promise<PlayerReference | null> {
-  const player = playerInfo[playerId as keyof typeof playerInfo];
+  const localPlayer = playerInfo[playerId as keyof typeof playerInfo];
+  const sleeperPlayers = localPlayer ? null : await get<Record<string, SleeperPlayer>>("/players/nfl");
+  const remotePlayer = sleeperPlayers?.[playerId];
+  const player = localPlayer || (remotePlayer ? { name: remotePlayer.full_name || [remotePlayer.first_name, remotePlayer.last_name].filter(Boolean).join(" ") || `Player #${playerId}`, position: remotePlayer.position || "", team: remotePlayer.team || "" } : null);
   if (!player) return null;
   const dashboard = await getLeagueDashboard();
   const weekly: PlayerReference["weekly"] = [];

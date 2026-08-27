@@ -4,13 +4,11 @@ const links = [
   ["/", "Home"],
   ["/analytics", "Analytics"],
   ["/teams", "Teams"],
-  ["/power-rankings", "Rankings"],
-  ["/transactions", "Acquisitions"],
-  ["/trades", "Trades"],
-  ["/drafts", "Drafts"],
-  ["/history", "All-Time Stats"]
+  ["/players", "Players"],
+  ["/transactions", "Transactions"],
+  ["/drafts", "Drafts"]
 ] as const;
 
-export function Nav() {
-  return <nav className="site-nav"><Link className="wordmark" href="/">AOTW <i>•</i> LEDGER</Link><div>{links.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}</div><span className="status"><b /> SLEEPER LIVE</span></nav>;
+export function Nav({ showLinks = true }: { showLinks?: boolean }) {
+  return <nav className="site-nav"><Link className="wordmark" href="/">AOTW <i>•</i> LEDGER</Link>{showLinks && <div>{links.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}</div>}<span className="status"><b /> SLEEPER LIVE</span></nav>;
 }
